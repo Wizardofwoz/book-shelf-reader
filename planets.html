@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Planet Dash - Solar System Game</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body {
+    font-family: "Trebuchet MS", system-ui, sans-serif; color: #fff;
+    background: radial-gradient(ellipse at 50% 40%, #1a1650 0%, #090725 55%, #02010d 100%);
+    user-select: none; -webkit-user-select: none; touch-action: manipulation;
+  }
+  #game { position: fixed; inset: 0; display: flex; flex-direction: column; }
+  #game.shake { animation: shake .45s; }
+  @keyframes shake {
+    0%, 100% { transform: translate(0); }
+    15% { transform: translate(-12px, 5px) rotate(-.6deg); }
+    30% { transform: translate(11px, -6px) rotate(.6deg); }
+    45% { transform: translate(-9px, 4px); }
+    60% { transform: translate(8px, -3px); }
+    80% { transform: translate(-4px, 2px); }
+  }
+  #flash { position: fixed; inset: 0; background: rgba(255,40,70,.35); opacity: 0; pointer-events: none; z-index: 4; }
+  #flash.on { animation: flash .45s; }
+  @keyframes flash { 0% { opacity: 1; } 100% { opacity: 0; } }
+
+  .hud { display: flex; gap: 8px; padding: 10px 10px 4px; z-index: 2; }
+  .pill {
+    flex: 1; text-align: center; padding: 5px 4px; border-radius: 16px;
+    background: rgba(255,255,255,.1); border: 2px solid rgba(255,255,255,.35);
+    backdrop-filter: blur(3px);
+  }
+  .pill small { display: block; font-size: 11px; font-weight: bold; letter-spacing: 1px; text-transform: uppercase; color: #9fd8ff; }
+  .pill b { font-size: 24px; line-height: 1.15; }
+  #lives { letter-spacing: 2px; font-size: 20px; }
+  .chips { display: flex; justify-content: center; gap: 6px; padding: 4px 10px 0; z-index: 2; }
+  .chip { width: 22px; height: 22px; border-radius: 50%; background: rgba(255,255,255,.12); border: 2px solid rgba(255,255,255,.3); transition: all .25s; }
+  .chip.on { border-color: #fff; box-shadow: 0 0 10px 2px currentColor; }
+  .hint { text-align: center; font-size: 14px; font-weight: bold; color: #ffd84d; padding: 4px 0 0; z-index: 2; }
+
+  #stage { position: relative; flex: 1; min-height: 0; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+  #fact {
+    position: fixed; left: 50%; bottom: 14px; width: min(92vw, 440px);
+    transform: translate(-50%, 140%); opacity: 0; pointer-events: none; z-index: 3;
+    background: rgba(18, 14, 70, .94); border: 3px solid #ffd84d; border-radius: 20px;
+    padding: 10px 14px 12px; box-shadow: 0 8px 30px rgba(0,0,0,.6);
+    transition: transform .25s ease-out, opacity .25s;
+  }
+  #fact.show { transform: translate(-50%, 0); opacity: 1; }
+  #fact.bad { border-color: #ff5a6e; }
+  #fact h3 { margin: 0 0 3px; font-size: 18px; color: #ffd84d; }
+  #fact.bad h3 { color: #ff8a98; }
+  #fact p { margin: 0; font-size: 15px; line-height: 1.35; color: #e8f1ff; }
+
+  #toast {
+    position: fixed; left: 50%; top: 38%; transform: translate(-50%, -50%) scale(.6); opacity: 0;
+    pointer-events: none; z-index: 3; font-size: clamp(30px, 9vw, 52px); font-weight: 900; color: #ffd84d;
+    text-shadow: 0 0 18px #ff9a00, 0 4px 0 rgba(0,0,0,.4); text-align: center; white-space: nowrap;
+  }
+  #toast.on { animation: toast 1.4s ease-out; }
+  @keyframes toast { 0% { opacity: 0; transform: translate(-50%,-50%) scale(.5); } 20% { opacity: 1; transform: translate(-50%,-50%) scale(1.1); } 80% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%,-70%) scale(1); } }
+
+  .overlay {
+    position: fixed; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; padding: 20px; text-align: center; background: rgba(3, 2, 20, .85);
+  }
+  .overlay.hidden { display: none; }
+  .overlay h1, .overlay h2 { margin: 0; font-size: clamp(30px, 9vw, 46px); color: #ffd84d; text-shadow: 0 0 20px #ff9a00; }
+  .overlay p { margin: 0; font-size: 18px; max-width: 360px; line-height: 1.4; color: #dbe9ff; }
+  .big {
+    font: inherit; font-size: clamp(28px, 9vw, 40px); font-weight: 900; color: #2a1a00; cursor: pointer;
+    background: linear-gradient(#ffe56b, #ffb300); border: 4px solid #fff; border-radius: 999px;
+    padding: 12px 40px; min-height: 68px; box-shadow: 0 6px 0 #b36b00, 0 0 24px rgba(255,200,0,.5);
+  }
+  .big:active { transform: translateY(4px); box-shadow: 0 2px 0 #b36b00; }
+  .score-big { font-size: 56px; font-weight: 900; color: #fff; text-shadow: 0 0 20px #4dc3ff; }
+</style>
+</head>
+<body>
+<div id="game">
+  <div class="hud">
+    <div class="pill"><small>Score</small><b id="score">0</b></div>
+    <div class="pill"><small>Lives</small><b id="lives">❤️❤️❤️</b></div>
+    <div class="pill"><small>Round</small><b id="round">1/3</b></div>
+  </div>
+  <div class="chips" id="chips"></div>
+  <div class="hint">Tap the planets, closest to the Sun first!</div>
+  <div id="stage"><canvas id="cv"></canvas></div>
+</div>
+<div id="flash"></div>
+<div id="fact"><h3 id="factName"></h3><p id="factText"></p></div>
+<div id="toast"></div>
+
+<div id="start" class="overlay">
+  <h1>🪐 Planet Dash</h1>
+  <p>The planets are on the move! Tap them in order of distance from the Sun &mdash; Mercury first, Neptune last. Wrong tap = lose a life. Clear 3 rounds to win!</p>
+  <button class="big" id="startBtn">Start</button>
+</div>
+<div id="end" class="overlay hidden">
+  <h2 id="endTitle">Game over</h2>
+  <div class="score-big" id="endScore">0</div>
+  <p id="endMsg"></p>
+  <button class="big" id="againBtn">Play Again</button>
+</div>
+
+<script>
+(function () {
+  var TOTAL_ROUNDS = 3, START_LIVES = 3, KEY = "planetDashBest";
+  var SPEED_MULT = [1, 1.3, 1.6];
+
+  // size = relative radius, color = [light, dark], ω0 = base angular speed (rad/s)
+  var PLANETS = [
+    { name: "Mercury", size: 5,  c: ["#d9d4cf", "#7d7770"], fact: "The smallest planet and the closest to the Sun. One year here lasts just 88 Earth days!" },
+    { name: "Venus",   size: 8,  c: ["#ffe2a3", "#d99a3a"], fact: "The hottest planet, at about 465°C. It spins backwards compared to most planets." },
+    { name: "Earth",   size: 8.5,c: ["#8fd6ff", "#1f6fd1"], fact: "Our home! The only planet we know of with liquid water on its surface and life." },
+    { name: "Mars",    size: 6,  c: ["#ff9a76", "#b8361b"], fact: "The Red Planet. It has the tallest volcano in the solar system, Olympus Mons." },
+    { name: "Jupiter", size: 15, c: ["#ffd9ae", "#b9703c"], fact: "The biggest planet. Its Great Red Spot is a storm larger than Earth, raging for centuries." },
+    { name: "Saturn",  size: 12, c: ["#ffeaa8", "#c8a04a"], ring: true, fact: "Famous for its bright rings made of ice and rock. It is so light it could float in water!" },
+    { name: "Uranus",  size: 10, c: ["#c4f7ff", "#4fb7c9"], fact: "An ice giant that rolls around the Sun on its side, tilted about 98 degrees." },
+    { name: "Neptune", size: 10, c: ["#8fb0ff", "#2a43c9"], fact: "The windiest planet, with storms over 2,000 km/h. One orbit takes 165 Earth years." }
+  ];
+  PLANETS.forEach(function (p, i) { p.w0 = 0.75 / (1 + i * 0.62); });
+
+  var cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+  var gameEl = document.getElementById("game");
+  var scoreEl = document.getElementById("score"), livesEl = document.getElementById("lives"), roundEl = document.getElementById("round");
+  var chipsEl = document.getElementById("chips");
+  var factEl = document.getElementById("fact"), factName = document.getElementById("factName"), factText = document.getElementById("factText");
+  var toastEl = document.getElementById("toast"), flashEl = document.getElementById("flash");
+  var startOv = document.getElementById("start"), endOv = document.getElementById("end");
+
+  var W = 0, H = 0, dpr = 1, cx = 0, cy = 0, sunR = 20, orbits = [], kScale = 1, stars = [];
+  var state = { playing: false, locked: false, score: 0, lives: START_LIVES, round: 1, next: 0 };
+  var angles = [], lit = [], wrongT = [];
+  var factTimer = null, last = performance.now();
+
+  function getBest() { try { return parseInt(localStorage.getItem(KEY), 10) || 0; } catch (e) { return 0; } }
+  function setBest(v) { try { localStorage.setItem(KEY, String(v)); } catch (e) {} }
+
+  PLANETS.forEach(function (p, i) {
+    var d = document.createElement("div"); d.className = "chip"; d.style.color = p.c[0]; chipsEl.appendChild(d);
+  });
+  var chips = chipsEl.children;
+
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var r = cv.getBoundingClientRect();
+    W = r.width; H = r.height;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    cx = W / 2; cy = H / 2;
+    var R = Math.min(W, H) / 2 - 8;
+    sunR = Math.max(14, R * 0.13);
+    var rMin = sunR + 14, gap = (R - rMin) / 7;
+    orbits = PLANETS.map(function (_, i) { return rMin + gap * i; });
+    kScale = Math.min(1.3, Math.max(0.45, gap * 0.6 / 12));
+    stars = [];
+    for (var i = 0; i < 140; i++) stars.push({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.4 + 0.3, t: Math.random() * 6.28, s: 0.5 + Math.random() * 2 });
+  }
+  window.addEventListener("resize", resize);
+
+  function pr(i) { return PLANETS[i].size * kScale; }
+  function pos(i) { return { x: cx + Math.cos(angles[i]) * orbits[i], y: cy + Math.sin(angles[i]) * orbits[i] }; }
+
+  function randomizeAngles() {
+    angles = PLANETS.map(function () { return Math.random() * Math.PI * 2; });
+    lit = PLANETS.map(function () { return false; });
+    wrongT = PLANETS.map(function () { return 0; });
+    for (var i = 0; i < chips.length; i++) { chips[i].classList.remove("on"); chips[i].style.background = ""; }
+  }
+
+  function updateHud() {
+    scoreEl.textContent = state.score;
+    var h = ""; for (var i = 0; i < START_LIVES; i++) h += i < state.lives ? "❤️" : "🖤";
+    livesEl.textContent = h;
+    roundEl.textContent = state.round + "/" + TOTAL_ROUNDS;
+  }
+
+  function showFact(i, bad) {
+    factName.textContent = bad ? PLANETS[i].name + " \u2014 not yet!" : "\u2728 " + PLANETS[i].name;
+    factText.textContent = PLANETS[i].fact;
+    factEl.className = "show" + (bad ? " bad" : "");
+    clearTimeout(factTimer);
+    factTimer = setTimeout(function () { factEl.className = bad ? "bad" : ""; }, 4200);
+  }
+
+  function toast(msg) {
+    toastEl.textContent = msg; toastEl.classList.remove("on"); void toastEl.offsetWidth; toastEl.classList.add("on");
+  }
+
+  function shake() {
+    gameEl.classList.remove("shake"); flashEl.classList.remove("on"); void gameEl.offsetWidth;
+    gameEl.classList.add("shake"); flashEl.classList.add("on");
+    if (navigator.vibrate) try { navigator.vibrate(120); } catch (e) {}
+  }
+
+  function pick(x, y) {
+    var best = -1, bd = 1e9;
+    for (var i = 0; i < PLANETS.length; i++) {
+      var p = pos(i), d = Math.hypot(p.x - x, p.y - y), hit = Math.max(pr(i) + 10, 22);
+      if (d <= hit && d < bd) { bd = d; best = i; }
+    }
+    return best;
+  }
+
+  cv.addEventListener("pointerdown", function (e) {
+    e.preventDefault();
+    if (!state.playing || state.locked) return;
+    var r = cv.getBoundingClientRect();
+    var i = pick(e.clientX - r.left, e.clientY - r.top);
+    if (i < 0 || lit[i]) return;
+    if (i === state.next) correct(i); else wrong(i);
+  });
+
+  function correct(i) {
+    lit[i] = true; state.next++;
+    state.score += 10 * state.round;
+    chips[i].classList.add("on"); chips[i].style.background = PLANETS[i].c[0];
+    showFact(i, false);
+    updateHud();
+    if (state.next >= PLANETS.length) roundClear();
+  }
+
+  function wrong(i) {
+    state.lives--; wrongT[i] = 0.5;
+    shake(); showFact(i, true); updateHud();
+    if (state.lives <= 0) { state.locked = true; setTimeout(function () { endGame(false); }, 900); }
+  }
+
+  function roundClear() {
+    state.locked = true;
+    var bonus = 50 * state.round + state.lives * 10;
+    state.score += bonus; updateHud();
+    if (state.round >= TOTAL_ROUNDS) {
+      toast("All planets found! +" + bonus);
+      setTimeout(function () { endGame(true); }, 1800);
+    } else {
+      toast("Round clear! +" + bonus);
+      setTimeout(function () {
+        state.round++; state.next = 0; randomizeAngles(); updateHud();
+        toast("Round " + state.round + " \u2014 faster!");
+        setTimeout(function () { state.locked = false; }, 600);
+      }, 1700);
+    }
+  }
+
+  function startGame() {
+    state = { playing: true, locked: false, score: 0, lives: START_LIVES, round: 1, next: 0 };
+    randomizeAngles(); updateHud();
+    startOv.classList.add("hidden"); endOv.classList.add("hidden");
+    factEl.className = "";
+    toast("Round 1 \u2014 go!");
+  }
+
+  function endGame(won) {
+    state.playing = false;
+    var best = getBest(), isNew = state.score > best;
+    if (isNew) { best = state.score; setBest(best); }
+    document.getElementById("endTitle").textContent = won ? "\uD83C\uDF89 You did it!" : "Game over";
+    document.getElementById("endScore").textContent = "Final score: " + state.score;
+    document.getElementById("endMsg").textContent = (won ? "You mapped the whole solar system! " : "You reached round " + state.round + ". ") +
+      (isNew ? "\uD83C\uDFC6 New best score!" : "Best score: " + best);
+    factEl.className = "";
+    endOv.classList.remove("hidden");
+  }
+
+  document.getElementById("startBtn").addEventListener("click", startGame);
+  document.getElementById("againBtn").addEventListener("click", startGame);
+
+  // ---------- drawing ----------
+  function drawPlanet(i, t) {
+    var p = pos(i), r = pr(i), P = PLANETS[i];
+    var isLit = lit[i], bad = wrongT[i] > 0;
+    if (isLit) {
+      var g = ctx.createRadialGradient(p.x, p.y, r, p.x, p.y, r * 3.2 + 6 + Math.sin(t * 5) * 2);
+      g.addColorStop(0, "rgba(255,240,150,.95)"); g.addColorStop(1, "rgba(255,200,0,0)");
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, r * 3.2 + 8, 0, 6.283); ctx.fill();
+    } else if (bad) {
+      ctx.fillStyle = "rgba(255,60,90," + (wrongT[i] * 1.2) + ")";
+      ctx.beginPath(); ctx.arc(p.x, p.y, r + 9, 0, 6.283); ctx.fill();
+    }
+    if (P.ring) {
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(-0.35);
+      ctx.strokeStyle = isLit ? "#fff7c0" : "rgba(235,215,160,.9)"; ctx.lineWidth = Math.max(1.5, r * 0.22);
+      ctx.beginPath(); ctx.ellipse(0, 0, r * 1.9, r * 0.6, 0, Math.PI, 6.283); ctx.stroke(); // back half
+      ctx.restore();
+    }
+    var gr = ctx.createRadialGradient(p.x - r * 0.4, p.y - r * 0.4, r * 0.15, p.x, p.y, r);
+    gr.addColorStop(0, P.c[0]); gr.addColorStop(1, P.c[1]);
+    ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 6.283); ctx.fill();
+    if (isLit) { ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.stroke(); }
+    if (P.ring) {
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(-0.35);
+      ctx.strokeStyle = isLit ? "#fff7c0" : "rgba(235,215,160,.9)"; ctx.lineWidth = Math.max(1.5, r * 0.22);
+      ctx.beginPath(); ctx.ellipse(0, 0, r * 1.9, r * 0.6, 0, 0, Math.PI); ctx.stroke(); // front half
+      ctx.restore();
+    }
+    if (isLit) {
+      ctx.font = "bold 12px Trebuchet MS, sans-serif"; ctx.textAlign = "center"; ctx.fillStyle = "#fff";
+      ctx.shadowColor = "#000"; ctx.shadowBlur = 4;
+      ctx.fillText(P.name, p.x, p.y - r - 7); ctx.shadowBlur = 0;
+    }
+  }
+
+  function frame(now) {
+    var dt = Math.min(0.05, (now - last) / 1000); last = now; var t = now / 1000;
+    ctx.clearRect(0, 0, W, H);
+    for (var s = 0; s < stars.length; s++) {
+      var st = stars[s], a = 0.45 + 0.55 * Math.sin(t * st.s + st.t);
+      ctx.fillStyle = "rgba(255,255,255," + a.toFixed(2) + ")"; ctx.fillRect(st.x, st.y, st.r, st.r);
+    }
+    // orbit rings
+    ctx.lineWidth = 1.5;
+    for (var o = 0; o < orbits.length; o++) {
+      ctx.strokeStyle = "rgba(150,200,255,.3)";
+      ctx.beginPath(); ctx.arc(cx, cy, orbits[o], 0, 6.283); ctx.stroke();
+    }
+    // sun
+    var pulse = 1 + Math.sin(t * 2) * 0.05;
+    var sg = ctx.createRadialGradient(cx, cy, sunR * 0.3, cx, cy, sunR * 2.4 * pulse);
+    sg.addColorStop(0, "rgba(255,230,90,.9)"); sg.addColorStop(0.4, "rgba(255,150,20,.35)"); sg.addColorStop(1, "rgba(255,100,0,0)");
+    ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(cx, cy, sunR * 2.4 * pulse, 0, 6.283); ctx.fill();
+    var sb = ctx.createRadialGradient(cx - sunR * 0.3, cy - sunR * 0.3, sunR * 0.1, cx, cy, sunR);
+    sb.addColorStop(0, "#fffbd0"); sb.addColorStop(0.6, "#ffd23a"); sb.addColorStop(1, "#ff8a00");
+    ctx.fillStyle = sb; ctx.beginPath(); ctx.arc(cx, cy, sunR, 0, 6.283); ctx.fill();
+    // planets
+    var mult = SPEED_MULT[Math.min(state.round, TOTAL_ROUNDS) - 1] || 1;
+    for (var i = 0; i < PLANETS.length; i++) {
+      angles[i] += PLANETS[i].w0 * mult * dt;
+      if (wrongT[i] > 0) wrongT[i] = Math.max(0, wrongT[i] - dt);
+      drawPlanet(i, t);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  resize(); randomizeAngles(); updateHud();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
